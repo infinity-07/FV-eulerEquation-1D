@@ -64,6 +64,7 @@ public:
     // Scheme and Testcase
     SCHEMETYPE m_scheme;
     TESTCASE m_testcase;
+    bool m_usePositivityLimiter;
 
     // Methods
     void initializeSolver(std::map<std::string, std::string> option);
@@ -77,6 +78,7 @@ public:
     void getFlux_conservative();
     void getFlux_characteristic();
     void getL(Array2D<double> &L);
+    void applyPositivityLimiter();
 
     // Output
     void outputAve(std::string prefix);

@@ -43,6 +43,7 @@ void CWENOFV::initializeSolver(std::map<std::string, std::string> option)
     }
 
     m_reconstructionType = (RECONSTRUCTIONTYPE)std::stoi(option["RECONSTRUCTIONTYPE"]);
+    m_usePositivityLimiter = option.count("POSITIVITY_LIMITER") && std::stoi(option["POSITIVITY_LIMITER"]) != 0;
 
     // Initialize cell flux arrays
     m_cellFlux.Resize(m_elemNum + 2 * m_ghostNum);
@@ -158,6 +159,9 @@ void CWENOFV::assembleRHS(Array2D<double> &L)
         std::cin.get();
         break;
     }
+
+    if (m_usePositivityLimiter)
+        applyPositivityLimiter();
 
     getL(L);
 }
@@ -453,6 +457,92 @@ double CWENOFV::calculateDeltaT()
     }
 
     return timestep;
+}
+
+void CWENOFV::applyPositivityLimiter()
+{
+    // Zhang, X., & Shu, C.-W. (2011).
+    // Maximum-principle-satisfying and positivity-preserving high-order schemes
+    // for conservation laws: survey and new developments.
+    // Proceedings of the Royal Society A, 467(2134), 2752-2776.
+
+    const double eps   = 1e-4;
+    const double gamma = equation->gamma;
+
+    for (int ei = m_startElemX; ei < m_endElemX; ei++)
+    {
+        const double rho_bar = m_Uh[ei][0];
+        const double m_bar   = m_Uh[ei][1];
+        const double E_bar   = m_Uh[ei][2];
+        const double p_bar   = (gamma - 1.0) * (E_bar - 0.5 * m_bar * m_bar / rho_bar);
+
+        if (rho_bar < eps || p_bar < eps) continue;
+
+        // === Step 1: Density limiter ===
+        // Scale density reconstruction so that rho >= eps at all face points,
+        // while preserving the cell average.
+        const double rho_min = std::min(m_cellFlux[ei][0][0], m_cellFlux[ei][1][0]);
+
+        if (rho_min < eps)
+        {
+            const double theta1 = std::min(1.0, (rho_bar - eps) / (rho_bar - rho_min));
+            for (int gp = 0; gp < 2; gp++)
+                m_cellFlux[ei][gp][0] = theta1 * (m_cellFlux[ei][gp][0] - rho_bar) + rho_bar;
+        }
+
+        // === Step 2: Pressure limiter ===
+        // For each face point a, if p(q̂_a) < eps, find the convex combination
+        // parameter t such that p((1-t)*w_bar + t*q̂_a) = eps by solving a
+        // quadratic, then take theta2 = min_a(t). Scale the full state vector.
+        double theta2 = 1.0;
+
+        for (int gp = 0; gp < 2; gp++)
+        {
+            const double rho_a = m_cellFlux[ei][gp][0];
+            const double mom_a = m_cellFlux[ei][gp][1];
+            const double E_a   = m_cellFlux[ei][gp][2];
+            const double p_a   = (gamma - 1.0) * (E_a - 0.5 * mom_a * mom_a / rho_a);
+
+            if (p_a >= eps) continue;
+
+            // s(t) = (1-t)*w_bar + t*q̂_a, find t in (0,1] where p(s(t)) = eps.
+            // Expanding p(s(t))*rho(s(t)) = eps*rho(s(t)) gives the quadratic:
+            // A*t^2 + B*t + C = 0,  C = rho_bar*(p_bar - eps) > 0
+            const double Drho = rho_a - rho_bar;
+            const double Dm   = mom_a - m_bar;
+            const double DE   = E_a   - E_bar;
+
+            const double A = (gamma - 1.0) * (DE * Drho - 0.5 * Dm * Dm);
+            const double B = (gamma - 1.0) * (DE * rho_bar + E_bar * Drho - m_bar * Dm)
+                             - eps * Drho;
+            const double C = rho_bar * (p_bar - eps);
+
+            double t_eps;
+            if (std::fabs(A) < 1e-14 * (std::fabs(B) + std::fabs(C)))
+            {
+                t_eps = -C / B;
+            }
+            else
+            {
+                double disc = B * B - 4.0 * A * C;
+                if (disc < 0.0) disc = 0.0;
+                const double sqrtD = std::sqrt(disc);
+                const double t1 = (-B - sqrtD) / (2.0 * A);
+                const double t2 = (-B + sqrtD) / (2.0 * A);
+                t_eps = 1.0;
+                if (t1 > 1e-14 && t1 <= 1.0 + 1e-14) t_eps = std::min(t_eps, t1);
+                if (t2 > 1e-14 && t2 <= 1.0 + 1e-14) t_eps = std::min(t_eps, t2);
+            }
+            theta2 = std::min(theta2, std::max(0.0, std::min(t_eps, 1.0)));
+        }
+
+        if (theta2 < 1.0)
+        {
+            for (int gp = 0; gp < 2; gp++)
+                for (int r = 0; r < m_varNum; r++)
+                    m_cellFlux[ei][gp][r] = theta2 * (m_cellFlux[ei][gp][r] - m_Uh[ei][r]) + m_Uh[ei][r];
+        }
+    }
 }
 
 void CWENOFV::outputAve(string prefix)
