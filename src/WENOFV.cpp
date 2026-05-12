@@ -1,5 +1,5 @@
 #include "weno_fv.hpp"
-#include "cmath"
+#include <cmath>
 #include "equations.hpp"
 #include "weno_reconstructor.hpp"
 #include <iomanip>
@@ -50,13 +50,11 @@ void CWENOFV::initializeSolver(std::map<std::string, std::string> option)
         m_cellFlux[ei].Resize(2, m_varNum);
 
     m_Uh.Resize(m_elemNum + 2 * m_ghostNum, m_varNum);
-    m_badcell.Resize(m_elemNum + 1 + 2 * m_ghostNum);
-    m_troubledCell.Resize(m_elemNum + 1 + 2 * m_ghostNum);
-    m_lambdaVec.Resize(m_elemNum + 2 * m_ghostNum);
 
     m_startElemX = m_ghostNum;
     m_endElemX = m_elemNum + m_ghostNum;
 }
+
 void CWENOFV::initializeAve()
 {
     const int gpNum = 4;
@@ -67,24 +65,19 @@ void CWENOFV::initializeAve()
     double gPoint, gWeight;
     m_Uh.setZero();
 
-    // Initialize cell averages
     for (int e = m_startElemX; e != m_endElemX; ++e)
     {
         for (int gp = 0; gp != gpNum; ++gp)
         {
-            // Calculate Gauss point and weight in the physical domain
             gPoint = m_grids[e].m_xC + 0.5 * m_grids[e].m_xD * gpoints_ref[gp];
             gWeight = 0.5 * m_grids[e].m_xD * gweights_ref[gp];
 
-            // Get the conserved variables at the Gauss point
             Array1D<double> Conserved_var(m_varNum);
             equation->getU0(gPoint, Conserved_var);
 
-            // Accumulate the weighted conserved variables
             for (int r = 0; r != m_varNum; ++r)
                 m_Uh[e][r] += Conserved_var[r] * gWeight;
         }
-        // Normalize by the cell width
         for (int r = 0; r != m_varNum; ++r)
             m_Uh[e][r] = m_Uh[e][r] / m_grids[e].m_xD;
     }
@@ -101,12 +94,12 @@ void CWENOFV::run()
     {
         RunRK();
         progressTimer.updateProgress(m_now / equation->outputime);
-
     }
     double executionTime = progressTimer.stop();
     std::cout << "\nTotal execution time: " << executionTime << " seconds\n";
     std::cout << "\nIteration complete" << std::endl;
 }
+
 void CWENOFV::RunRK()
 {
     // Gottlieb, S., Shu, C.-W., & Tadmor, E. (2001).
@@ -118,44 +111,29 @@ void CWENOFV::RunRK()
 
     const double deltaT = calculateDeltaT();
 
-    // Copy current solution to temporary storage
     for (int e = m_startElemX; e != m_endElemX; ++e)
         for (int r = 0; r != m_varNum; ++r)
             m_Un[e][r] = m_Uh[e][r];
-    // std::cout << setprecision(15) << setw(20) << m_now << " " << deltaT << std::endl;
 
     for (int step = 0; step != 3; step++)
     {
-        // Assemble the right-hand side (RHS) for the equations
         assembleRHS(L);
 
         double a, b, c;
-        // Set coefficients for the third-order Runge-Kutta scheme based on the step
         switch (step)
         {
         case 0:
-            a = 1.0;
-            b = 0.0;
-            c = 1.0;
-            break;
+            a = 1.0;  b = 0.0;        c = 1.0;        break;
         case 1:
-            a = 3.0 / 4.0;
-            b = 1.0 / 4.0;
-            c = 1.0 / 4.0;
-            break;
+            a = 3.0 / 4.0; b = 1.0 / 4.0; c = 1.0 / 4.0; break;
         case 2:
-            a = 1.0 / 3.0;
-            b = 2.0 / 3.0;
-            c = 2.0 / 3.0;
-            break;
+            a = 1.0 / 3.0; b = 2.0 / 3.0; c = 2.0 / 3.0; break;
         default:
             std::cout << "Error: Invalid RK3 step" << std::endl;
             std::cin.get();
             exit(1);
-            break;
         }
 
-        // Update solution vector using the RK3 coefficients
         for (int e = m_startElemX; e != m_endElemX; ++e)
             for (int r = 0; r != m_varNum; ++r)
                 m_Uh[e][r] = a * m_Un[e][r] + b * m_Uh[e][r] + c * deltaT * L[e][r];
@@ -167,7 +145,6 @@ void CWENOFV::RunRK()
 
 void CWENOFV::assembleRHS(Array2D<double> &L)
 {
-
     switch (m_reconstructionType)
     {
     case CONVERVATIVE:
@@ -182,8 +159,9 @@ void CWENOFV::assembleRHS(Array2D<double> &L)
         break;
     }
 
-    getL(L); // 黎曼求解器
+    getL(L);
 }
+
 void CWENOFV::getL(Array2D<double> &L)
 {
     Array1D<double> flux_right(m_varNum);
@@ -211,7 +189,7 @@ void CWENOFV::getL(Array2D<double> &L)
                 m_cellFlux[m_endElemX][gp][r] = m_cellFlux[m_endElemX - 1][gp][r];
             }
     }
-    else // REFLECTIVE: ghost face = mirror of boundary face with momentum negated
+    else // REFLECTIVE
     {
         for (int r = 0; r < m_varNum; r++)
         {
@@ -229,10 +207,9 @@ void CWENOFV::getL(Array2D<double> &L)
         for (int r = 0; r != m_varNum; r++)
         {
             u_right_minus[r] = m_cellFlux[e][1][r];
-            u_right_plus[r] = m_cellFlux[e + 1][0][r];
-
-            u_left_minus[r] = m_cellFlux[e - 1][1][r];
-            u_left_plus[r] = m_cellFlux[e][0][r];
+            u_right_plus[r]  = m_cellFlux[e + 1][0][r];
+            u_left_minus[r]  = m_cellFlux[e - 1][1][r];
+            u_left_plus[r]   = m_cellFlux[e][0][r];
         }
 
         equation->getLLFRiemannFlux(u_left_minus, u_left_plus, flux_left);
@@ -245,13 +222,8 @@ void CWENOFV::getL(Array2D<double> &L)
 
 void CWENOFV::getFlux_conservative()
 {
-    Array1D<double> uavemmm(m_varNum), uavemm(m_varNum), uavem(m_varNum), uave(m_varNum), uavep(m_varNum), uavepp(m_varNum), uaveppp(m_varNum);
-
+    Array1D<double> uavemm(m_varNum), uavem(m_varNum), uave(m_varNum), uavep(m_varNum), uavepp(m_varNum);
     Array1D<double> u_minus(m_varNum), u_plus(m_varNum);
-    Array1D<double> flux(m_varNum);
-
-    m_badcell.setZero();
-
     Array2D<double> tempAve(7, m_varNum);
 
     if (equation->boundaryCondition == PERIOD)
@@ -272,7 +244,7 @@ void CWENOFV::getFlux_conservative()
                 m_Uh[m_endElemX + e][r] = m_Uh[m_endElemX - 1][r];
             }
     }
-    else // REFLECTIVE: mirror ghost cells with momentum negated
+    else // REFLECTIVE
     {
         for (int r = 0; r < m_varNum; r++)
         {
@@ -288,22 +260,16 @@ void CWENOFV::getFlux_conservative()
     for (int ei = m_startElemX; ei < m_endElemX; ei++)
     {
         for (int tempIndex = 0; tempIndex < 7; tempIndex++)
-        {
             for (int r = 0; r < m_varNum; r++)
-            {
                 tempAve[tempIndex][r] = m_Uh[ei - 3 + tempIndex][r];
-            }
-        }
 
         for (int r = 0; r != m_varNum; r++)
         {
-            uavemmm[r] = tempAve[0][r];
             uavemm[r] = tempAve[1][r];
-            uavem[r] = tempAve[2][r];
-            uave[r] = tempAve[3][r];
-            uavep[r] = tempAve[4][r];
+            uavem[r]  = tempAve[2][r];
+            uave[r]   = tempAve[3][r];
+            uavep[r]  = tempAve[4][r];
             uavepp[r] = tempAve[5][r];
-            uaveppp[r] = tempAve[6][r];
         }
 
         for (int r = 0; r < m_varNum; r++)
@@ -347,18 +313,13 @@ void CWENOFV::getFlux_conservative()
         }
     }
 }
+
 void CWENOFV::getFlux_characteristic()
 {
-    Array1D<double> uavemmm(m_varNum), uavemm(m_varNum), uavem(m_varNum), uave(m_varNum), uavep(m_varNum), uavepp(m_varNum), uaveppp(m_varNum);
-    Array1D<double> uavemmm_c(m_varNum), uavemm_c(m_varNum), uavem_c(m_varNum), uave_c(m_varNum), uavep_c(m_varNum), uavepp_c(m_varNum), uaveppp_c(m_varNum);
-
+    Array1D<double> uavemm(m_varNum), uavem(m_varNum), uave(m_varNum), uavep(m_varNum), uavepp(m_varNum);
+    Array1D<double> uavemm_c(m_varNum), uavem_c(m_varNum), uave_c(m_varNum), uavep_c(m_varNum), uavepp_c(m_varNum);
     Array1D<double> u_minus(m_varNum), u_plus(m_varNum);
-    Array1D<double> u_minus_c(m_varNum), u_plus_c(m_varNum);
-    Array1D<double> flux(m_varNum);
-
     Array2D<double> eigMatrixL(m_varNum, m_varNum), eigMatrixR(m_varNum, m_varNum);
-    m_badcell.setZero();
-
     Array2D<double> tempAve(7, m_varNum);
 
     if (equation->boundaryCondition == PERIOD)
@@ -379,7 +340,7 @@ void CWENOFV::getFlux_characteristic()
                 m_Uh[m_endElemX + e][r] = m_Uh[m_endElemX - 1][r];
             }
     }
-    else // REFLECTIVE: mirror ghost cells with momentum negated
+    else // REFLECTIVE
     {
         for (int r = 0; r < m_varNum; r++)
         {
@@ -395,33 +356,25 @@ void CWENOFV::getFlux_characteristic()
     for (int ei = m_startElemX; ei < m_endElemX; ei++)
     {
         for (int tempIndex = 0; tempIndex < 7; tempIndex++)
-        {
             for (int r = 0; r < m_varNum; r++)
-            {
                 tempAve[tempIndex][r] = m_Uh[ei - 3 + tempIndex][r];
-            }
-        }
 
         for (int r = 0; r != m_varNum; r++)
         {
-            uavemmm[r] = tempAve[0][r];
             uavemm[r] = tempAve[1][r];
-            uavem[r] = tempAve[2][r];
-            uave[r] = tempAve[3][r];
-            uavep[r] = tempAve[4][r];
+            uavem[r]  = tempAve[2][r];
+            uave[r]   = tempAve[3][r];
+            uavep[r]  = tempAve[4][r];
             uavepp[r] = tempAve[5][r];
-            uaveppp[r] = tempAve[6][r];
         }
 
         equation->getLEigenMatrix(uave, eigMatrixL);
         equation->getREigenMatrix(uave, eigMatrixR);
-        uavemmm_c = eigMatrixL * uavemmm;
         uavemm_c = eigMatrixL * uavemm;
-        uavem_c = eigMatrixL * uavem;
-        uave_c = eigMatrixL * uave;
-        uavep_c = eigMatrixL * uavep;
+        uavem_c  = eigMatrixL * uavem;
+        uave_c   = eigMatrixL * uave;
+        uavep_c  = eigMatrixL * uavep;
         uavepp_c = eigMatrixL * uavepp;
-        uaveppp_c = eigMatrixL * uaveppp;
 
         for (int r = 0; r < m_varNum; r++)
         {
@@ -458,7 +411,7 @@ void CWENOFV::getFlux_characteristic()
         }
 
         u_minus = eigMatrixR * u_minus;
-        u_plus = eigMatrixR * u_plus;
+        u_plus  = eigMatrixR * u_plus;
 
         for (int r = 0; r != m_varNum; r++)
         {
@@ -468,14 +421,12 @@ void CWENOFV::getFlux_characteristic()
     }
 }
 
-
 double CWENOFV::calculateDeltaT()
 {
     double timestep(1.0), tmp(0);
     Array1D<double> Uave(m_varNum);
     double eigenvalue(0);
 
-    // calculate the time step
     Uave.setZero();
     for (int e = m_startElemX; e != m_endElemX; ++e)
     {
@@ -483,13 +434,7 @@ double CWENOFV::calculateDeltaT()
             Uave[r] = m_Uh[e][r];
 
         eigenvalue = equation->getMaxEigenValue(Uave);
-
-        tmp = m_cfl * m_deltaX / eigenvalue; // 保界与稳定性
-
-        if (m_testcase == SMOOTH)
-            tmp = 10 * pow(m_deltaX, 2); // 为了测出6阶精度而设置
-        // else
-        //     tmp = m_cfl * m_deltaX / eigenvalue; // 保界与稳定性
+        tmp = m_cfl * m_deltaX / eigenvalue;
 
         if (tmp > timestep)
             continue;
@@ -512,13 +457,11 @@ double CWENOFV::calculateDeltaT()
 
 void CWENOFV::outputAve(string prefix)
 {
-    // Get vital variables information
     int vitalVarCount = equation->getVitalVarNum();
     Array1D<double> vitalVars(vitalVarCount);
     Array1D<string> vitalVarNames(vitalVarCount);
     equation->getVitalVarName(vitalVarNames);
 
-    // Prepare output file
     string filename = "./output/average_" + prefix + ".plt";
     ofstream outputFile(filename);
 
@@ -530,35 +473,23 @@ void CWENOFV::outputAve(string prefix)
         return;
     }
 
-    // Write header
     outputFile << "TITLE=FVSolution\n"
                << "VARIABLES=X ";
-
     for (int i = 0; i < vitalVarCount; i++)
-    {
         outputFile << vitalVarNames[i] << " ";
-    }
     outputFile << "\nZONE T=TA\n";
 
-    // Write data for each element
     for (int elem = m_startElemX; elem < m_endElemX; ++elem)
     {
-        // Get element solution
         Array1D<double> elementSolution(m_varNum);
         for (int var = 0; var < m_varNum; ++var)
-        {
             elementSolution[var] = m_Uh[elem][var];
-        }
 
-        // Calculate vital variables for this element
         equation->getVitalVarVal(elementSolution, vitalVars);
 
-        // Write element data
         outputFile << m_grids[elem].m_xC << " ";
-
         for (int var = 0; var < vitalVarCount; ++var)
             outputFile << setprecision(15) << setw(20) << vitalVars[var] << " ";
-
         outputFile << "\n";
     }
 
@@ -566,51 +497,6 @@ void CWENOFV::outputAve(string prefix)
     cout << "Average values output completed." << endl;
 }
 
-void CWENOFV::outputCharacteristicAve(string prefix)
-{
-    // Output file name
-    std::cout << "Starting to output cell averages..." << std::endl;
-
-    const string filename = "./output/characteristic_average_" + prefix + ".plt";
-    std::ofstream outputFile(filename);
-
-    Array2D<double> eigMatrixL(m_varNum, m_varNum), eigMatrixR(m_varNum, m_varNum);
-    Array1D<double> characteristicAverage(m_varNum);
-
-    if (outputFile.is_open())
-    {
-        // Write header information
-        outputFile << "TITLE=FVSolution" << std::endl;
-        outputFile << "VARIABLES=X ";
-        for (int r = 0; r != m_varNum; r++)
-            outputFile << "characteristic_var_" << r << " ";
-        outputFile << std::endl;
-
-        outputFile << "ZONE T=TA" << std::endl;
-
-        for (int e = m_startElemX; e < m_endElemX; ++e)
-        {
-            Array1D<double> cellAverage(m_varNum);
-            for (int r = 0; r != m_varNum; r++)
-                cellAverage[r] = m_Uh[e][r];
-
-            // Get left and right eigenmatrices
-            equation->getLEigenMatrix(cellAverage, eigMatrixL);
-            equation->getREigenMatrix(cellAverage, eigMatrixR);
-            characteristicAverage = eigMatrixL * cellAverage;
-
-            // Output cell center and characteristic variables
-            outputFile << m_grids[e].m_xC << " ";
-            for (int r = 0; r != m_varNum; r++)
-                outputFile << characteristicAverage[r] << " ";
-
-            outputFile << std::endl;
-        }
-        outputFile.close();
-    }
-    else
-        std::cout << "Unable to open file" << std::endl;
-}
 void CWENOFV::outputAccuracy(string prefix)
 {
     int gpNum = 4;
@@ -623,7 +509,6 @@ void CWENOFV::outputAccuracy(string prefix)
     double err_1(0), err_2(0), err_inf(0);
     double gPoint, gWeight;
 
-    // 计算每个小单元上精确值的单元平均值
     Uexact.setZero();
     for (int e = m_startElemX; e != m_endElemX; ++e)
     {
@@ -637,7 +522,6 @@ void CWENOFV::outputAccuracy(string prefix)
         }
     }
 
-    // 利用计算得到的单元平均值计算误差范数
     Array1D<double> Uave(m_varNum);
     for (int e = m_startElemX; e != m_endElemX; ++e)
     {
@@ -654,21 +538,17 @@ void CWENOFV::outputAccuracy(string prefix)
     err_1 = err_1 / m_elemNum;
     err_2 = sqrt(err_2 / m_elemNum);
 
-    // 输出
     std::fstream fileout;
     string elemNum = sc_common::intToString(m_elemNum);
     string filename = "./output/accuracy_" + prefix + ".csv";
 
-    // 检查文件是否存在
     std::ifstream fileExists(filename.c_str());
     if (fileExists)
     {
-        // 文件存在，追加
         fileout.open(filename.c_str(), ios::out | ios::app);
     }
     else
     {
-        // 文件不存在，则创建新文件并输出表头
         fileout.open(filename.c_str(), ios::out);
         fileout << "elemNum, Linf-norm (z1), L1-norm (z1), L2-norm (z1)" << std::endl;
     }
@@ -677,8 +557,6 @@ void CWENOFV::outputAccuracy(string prefix)
     fileout << setprecision(15) << setw(20) << setiosflags(ios::scientific) << err_inf << ", ";
     fileout << setprecision(15) << setw(20) << setiosflags(ios::scientific) << err_1 << ", ";
     fileout << setprecision(15) << setw(20) << setiosflags(ios::scientific) << err_2;
-
     fileout << std::endl;
     fileout.close();
 }
-

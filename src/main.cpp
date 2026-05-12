@@ -7,8 +7,7 @@
 
 int main()
 {
-    // --------------------- Two-Phase Flow Equation ---------------------//
-    EulerEquation *equation = new EulerEquation();
+    EulerEquation equation;
     string inputfile = "./input/config.cfg";
 
     // ---------------- Read Configuration File --------------//
@@ -18,7 +17,7 @@ int main()
     config.read(option);
 
     // ------------ Pass the equation and initial boundary conditions to the solver -------------- //
-    CWENOFV solver(equation);
+    CWENOFV solver(&equation);
     solver.initializeSolver(option);
     solver.initializeAve();
 

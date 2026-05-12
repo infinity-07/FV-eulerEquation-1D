@@ -7,7 +7,6 @@
 
 #include "equations.hpp"
 #include <map>
-#include <random>
 
 // WENO reconstruction types
 enum RECONSTRUCTIONTYPE
@@ -19,18 +18,10 @@ enum RECONSTRUCTIONTYPE
 class Cgrid
 {
 public:
-    // 成员变量
     double m_xL;
     double m_xR;
     double m_xC;
     double m_xD;
-};
-
-class minusAndPlusFlux
-{
-public:
-    Array1D<double> flux_minus;
-    Array1D<double> flux_plus;
 };
 
 class CWENOFV
@@ -55,7 +46,6 @@ public:
     double m_cfl;
     double m_deltaX;
     double m_outputTime;
-    double m_restartTime;
     double m_now;
     int m_count;
 
@@ -64,11 +54,7 @@ public:
     // Arrays
     Array2D<double> m_Uh;
     Array1D<Cgrid> m_grids;
-    Array1D<minusAndPlusFlux> m_flux;
     Array1D<Array2D<double>> m_cellFlux;
-    Array1D<double> m_troubledCell;
-    Array1D<double> m_badcell;
-Array1D<double> m_lambdaVec;
 
     RECONSTRUCTIONTYPE m_reconstructionType;
 
@@ -81,7 +67,6 @@ Array1D<double> m_lambdaVec;
 
     // Methods
     void initializeSolver(std::map<std::string, std::string> option);
-
     void initializeAve();
 
     void run();
@@ -91,14 +76,11 @@ Array1D<double> m_lambdaVec;
     void assembleRHS(Array2D<double> &L);
     void getFlux_conservative();
     void getFlux_characteristic();
-
     void getL(Array2D<double> &L);
 
     // Output
     void outputAve(std::string prefix);
-    void outputCharacteristicAve(std::string prefix);
     void outputAccuracy(string prefix);
-
 };
 
 ///////////////////////////////////////////////////////////////////////
