@@ -1,0 +1,14 @@
+# 忽略中间文件
+*.o
+
+# 忽略输出文件
+program
+
+# 忽略编译目录和输出目录
+output/*
+
+!output/.gitkeep
+
+# 忽略 VSCode 配置文件
+.vscode/
+.claude/
